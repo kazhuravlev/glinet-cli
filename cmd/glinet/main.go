@@ -12,7 +12,7 @@ import (
 )
 
 const envPassword = "GL_INET_PASSWORD"
-const cfgFile = "~/.config/glinet/auth-token"
+const cfgFile = ".config/glinet/auth-token"
 const argAddr = "addr"
 const argPassword = "password"
 
@@ -58,9 +58,15 @@ func cmdAuth(c *cli.Context) error {
 		return err
 	}
 
-	_ = os.MkdirAll(filepath.Dir(cfgFile), 0o755)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
 
-	if err := os.WriteFile(cfgFile, []byte(token), 0o644); err != nil {
+	absCfgFile := filepath.Join(homeDir, cfgFile)
+	_ = os.MkdirAll(filepath.Dir(absCfgFile), 0o755)
+
+	if err := os.WriteFile(absCfgFile, []byte(token), 0o644); err != nil {
 		return err
 	}
 
