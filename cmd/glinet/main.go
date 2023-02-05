@@ -60,6 +60,26 @@ func main() {
 				Description: "Get list of clients",
 				Action:      wrapWithClient(cmdGetClients),
 			},
+			{
+				Name:        "get-modem-info",
+				Description: "Get status of modem",
+				Action:      wrapWithClient(cmdGetModemInfo),
+			},
+			{
+				Name:        "modem-turn-on",
+				Description: "Turn on modem",
+				Action:      wrapWithClient(cmdTurnModemOn),
+			},
+			{
+				Name:        "modem-turn-off",
+				Description: "Turn off modem",
+				Action:      wrapWithClient(cmdTurnModemOff),
+			},
+			{
+				Name:        "modem-turn-on-auto",
+				Description: "Auto dial",
+				Action:      wrapWithClient(cmdTurnModemOnAuto),
+			},
 		},
 	}
 
@@ -159,7 +179,124 @@ func cmdGetClients(ctx context.Context, c *cli.Context, client *req.Client) erro
 	for _, glClient := range res.Clients {
 		fmt.Println(glClient.Iface, glClient.IP, glClient.Online, glClient.Name)
 	}
-	
+
+	return nil
+}
+
+func cmdGetModemInfo(ctx context.Context, c *cli.Context, client *req.Client) error {
+	resp, err := client.R().
+		SetContext(ctx).
+		Post("/cgi-bin/api/modem/info")
+	if err != nil {
+		return err
+	}
+
+	if resp.GetStatusCode() != http.StatusOK {
+		return errors.New("unexpected status code")
+	}
+
+	type Modem struct {
+		Ports       []string `json:"ports"`
+		ModemID     int      `json:"modem_id"`
+		DataPort    string   `json:"data_port"`
+		ControlPort string   `json:"control_port"`
+		QmiPort     string   `json:"qmi_port"`
+		Name        string   `json:"name"`
+		Imei        string   `json:"IMEI"`
+		Bus         string   `json:"bus"`
+		HwVersion   string   `json:"hw_version"`
+		SimNum      string   `json:"sim_num"`
+		Mnc         string   `json:"mnc"`
+		Mcc         string   `json:"mcc"`
+		Carrier     string   `json:"carrier"`
+		Up          string   `json:"up"`
+		SIMStatus   int      `json:"SIM_status"`
+		Operators   []string `json:"operators"`
+	}
+
+	var res struct {
+		Passthrough           bool    `json:"passthrough"`
+		HintModifyWifiChannel int     `json:"hint_modify_wifi_channel"`
+		Modems                []Modem `json:"modems"`
+	}
+	if err := resp.UnmarshalJson(&res); err != nil {
+		return err
+	}
+
+	for _, modem := range res.Modems {
+		fmt.Println(modem.SIMStatus, modem.Up, modem.Imei, modem.Carrier, modem.QmiPort)
+	}
+
+	return nil
+}
+
+func cmdTurnModemOn(ctx context.Context, c *cli.Context, client *req.Client) error {
+	request := map[string]string{
+		//"modem_id": "1",
+		//"bus":      "1-1.2",
+		"disable": "false",
+	}
+
+	client.DevMode()
+	resp, err := client.R().
+		SetContext(ctx).
+		SetFormData(request).
+		Post("/cgi-bin/api/modem/enable")
+	if err != nil {
+		return err
+	}
+
+	if resp.GetStatusCode() != http.StatusOK {
+		return errors.New("unexpected status code")
+	}
+
+	return nil
+}
+
+func cmdTurnModemOff(ctx context.Context, c *cli.Context, client *req.Client) error {
+	request := map[string]string{
+		//"modem_id": "1",
+		//"bus":      "1-1.2",
+		"disable": "true",
+	}
+
+	client.DevMode()
+	resp, err := client.R().
+		SetContext(ctx).
+		SetFormData(request).
+		Post("/cgi-bin/api/modem/enable")
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(resp)
+	if resp.GetStatusCode() != http.StatusOK {
+		return errors.New("unexpected status code")
+	}
+
+	return nil
+}
+
+func cmdTurnModemOnAuto(ctx context.Context, c *cli.Context, client *req.Client) error {
+	request := map[string]string{
+		"modem_id": "1",
+		"bus":      "1-1.2",
+	}
+
+	client.DevMode()
+	resp, err := client.R().
+		SetContext(ctx).
+		SetFormData(request).
+		Post("/cgi-bin/api/modem/auto")
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(resp)
+	if resp.GetStatusCode() != http.StatusOK {
+		return errors.New("unexpected status code")
+	}
+
 	return nil
 }
 
