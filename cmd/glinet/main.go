@@ -6,21 +6,36 @@ import (
 	"errors"
 	"fmt"
 	"github.com/imroc/req/v3"
+	"github.com/jedib0t/go-pretty/v6/table"
+	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/kazhuravlev/just"
 	cli "github.com/urfave/cli/v3"
+	"golang.org/x/term"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 )
 
 const envPassword = "GL_INET_PASSWORD"
 const cfgFile = ".config/glinet/config.json"
-const argAddr = "addr"
-const argPassword = "password"
+
+type Version string
+
+const VersionV1 Version = "v1"
+
+type Router struct {
+	Addr     string `json:"addr"`
+	Password string `json:"password"`
+	Token    string `json:"token"`
+}
 
 type Config struct {
-	Tokens map[string]string `json:"tokens"`
+	Version Version  `json:"v"`
+	Routers []Router `json:"routers"`
 }
 
 func main() {
@@ -31,19 +46,7 @@ func main() {
 				Name:        "auth",
 				Description: "Auth in router",
 				Action:      cmdAuth,
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:     argAddr,
-						Aliases:  []string{"a"},
-						Required: false,
-						Value:    "192.168.8.1",
-					},
-					&cli.StringFlag{
-						Name:     argPassword,
-						Aliases:  []string{"p"},
-						Required: false,
-					},
-				},
+				Usage:       "glinet auth 192.168.8.1 or just glinet auth",
 			},
 			{
 				Name:        "public-ip",
@@ -176,10 +179,39 @@ func cmdGetClients(ctx context.Context, c *cli.Context, client *req.Client) erro
 		return err
 	}
 
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+
+	t.AppendHeader(table.Row{
+		"IP",
+		"Mac",
+		"Online",
+		"Iface",
+		"Name",
+		"Favorite",
+		"Blocked",
+		"OnlineTime",
+		"Alive",
+	})
+	just.SliceSort(res.Clients, func(a, b Client) bool {
+		return a.Online != b.Online
+	})
 	for _, glClient := range res.Clients {
-		fmt.Println(glClient.Iface, glClient.IP, glClient.Online, glClient.Name)
+		t.AppendRow(table.Row{
+			glClient.IP,
+			glClient.Mac,
+			glClient.Online,
+			glClient.Iface,
+			glClient.Name,
+			glClient.Favorite,
+			glClient.Blocked,
+			glClient.OnlineTime,
+			glClient.Alive,
+		})
+
 	}
 
+	t.Render()
 	return nil
 }
 
@@ -223,9 +255,45 @@ func cmdGetModemInfo(ctx context.Context, c *cli.Context, client *req.Client) er
 		return err
 	}
 
-	for _, modem := range res.Modems {
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+	t.SetColumnConfigs([]table.ColumnConfig{
+		{
+			Number:   1,
+			WidthMax: 12,
+		},
+		{},
+	})
+
+	for i, modem := range res.Modems {
+		t.AppendRow(table.Row{fmt.Sprintf("#%d", i+1)}, table.RowConfig{
+			AutoMerge:      true,
+			AutoMergeAlign: text.AlignLeft,
+		})
+		t.AppendSeparator()
+		t.AppendRows([]table.Row{
+			{"ModemID", modem.ModemID},
+			{"Name", modem.Name},
+			{"Imei", modem.Imei},
+			{"Carrier", modem.Carrier},
+			{"Up", modem.Up},
+			{"SIMStatus", modem.SIMStatus},
+			{"Ports", strings.Join(modem.Ports, ", ")},
+			{"DataPort", modem.DataPort},
+			{"ControlPort", modem.ControlPort},
+			{"QmiPort", modem.QmiPort},
+			{"Bus", modem.Bus},
+			{"HwVersion", modem.HwVersion},
+			{"SimNum", modem.SimNum},
+			{"Mnc", modem.Mnc},
+			{"Mcc", modem.Mcc},
+			{"Operators", strings.Join(modem.Operators, ", ")},
+		})
+
 		fmt.Println(modem.SIMStatus, modem.Up, modem.Imei, modem.Carrier, modem.QmiPort)
 	}
+
+	t.Render()
 
 	return nil
 }
@@ -269,7 +337,6 @@ func cmdTurnModemOff(ctx context.Context, c *cli.Context, client *req.Client) er
 		return err
 	}
 
-	fmt.Println(resp)
 	if resp.GetStatusCode() != http.StatusOK {
 		return errors.New("unexpected status code")
 	}
@@ -292,7 +359,6 @@ func cmdTurnModemOnAuto(ctx context.Context, c *cli.Context, client *req.Client)
 		return err
 	}
 
-	fmt.Println(resp)
 	if resp.GetStatusCode() != http.StatusOK {
 		return errors.New("unexpected status code")
 	}
@@ -311,13 +377,31 @@ func getAbsConfigFile() (string, error) {
 
 func cmdAuth(c *cli.Context) error {
 	ctx := c.Context
-	fmt.Println(c.String(argAddr), c.String(argPassword))
-	if c.NumFlags() < 2 {
-		return errors.New("specify address and password from router")
+
+	// NOTE: this is default address for all of Gl.Inet devices
+	address := "192.168.8.1"
+	if c.Args().Len() == 1 {
+		address = c.Args().First()
 	}
 
-	glAddr := c.String(argAddr)
-	glToken, err := fetchToken(ctx, glAddr, c.String(argPassword))
+	ip := net.ParseIP(address)
+	if ip == nil {
+		return errors.New("unable to parse ip")
+	}
+
+	glAddr := ip.String()
+	fmt.Printf("Address: '%s'\n", glAddr)
+	fmt.Print("Enter Password: ")
+	bytePassword, err := term.ReadPassword(syscall.Stdin)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println()
+
+	glPassword := strings.TrimSpace(string(bytePassword))
+
+	glToken, err := fetchToken(ctx, glAddr, glPassword)
 	if err != nil {
 		return err
 	}
@@ -329,14 +413,19 @@ func cmdAuth(c *cli.Context) error {
 
 	_ = os.MkdirAll(filepath.Dir(absCfgFile), 0o755)
 
-	cfg := Config{Tokens: make(map[string]string)}
+	var cfg Config
 	if bb, err := os.ReadFile(absCfgFile); err == nil {
 		if err := json.Unmarshal(bb, &cfg); err != nil {
 			return fmt.Errorf("config file is corrupted. check cfg file or delete it: %w", err)
 		}
 	}
 
-	cfg.Tokens[glAddr] = glToken
+	cfg.Version = VersionV1
+	cfg.Routers = append(cfg.Routers, Router{
+		Addr:     glAddr,
+		Password: glPassword,
+		Token:    glToken,
+	})
 	bb, err := json.Marshal(cfg)
 	if err != nil {
 		return err
@@ -345,6 +434,8 @@ func cmdAuth(c *cli.Context) error {
 	if err := os.WriteFile(absCfgFile, bb, 0o644); err != nil {
 		return err
 	}
+
+	fmt.Println("Authorization successful")
 
 	return nil
 }
@@ -368,12 +459,16 @@ func wrapWithClient(cmd func(context.Context, *cli.Context, *req.Client) error) 
 			return err
 		}
 
-		if len(cfg.Tokens) != 1 {
+		if cfg.Version != VersionV1 {
+			return errors.New("unsupported config version")
+		}
+
+		if len(cfg.Routers) != 1 {
 			return errors.New("not implemented")
 		}
 
-		glAddr := just.MapPairs(cfg.Tokens)[0].Key
-		glToken := just.MapPairs(cfg.Tokens)[0].Val
+		glAddr := cfg.Routers[0].Addr
+		glToken := cfg.Routers[0].Token
 
 		client := req.C().
 			SetBaseURL(fmt.Sprintf("https://%s", glAddr)).
