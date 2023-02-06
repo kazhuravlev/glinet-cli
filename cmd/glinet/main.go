@@ -421,12 +421,18 @@ func cmdAuth(c *cli.Context) error {
 	}
 
 	cfg.Version = VersionV1
-	cfg.Routers = append(cfg.Routers, Router{
+	newRouter := Router{
 		Addr:     glAddr,
 		Password: glPassword,
 		Token:    glToken,
-	})
-	bb, err := json.Marshal(cfg)
+	}
+	cfg.Routers = just.SliceReplaceFirstOrAdd(
+		cfg.Routers,
+		func(_ int, router Router) bool { return router.Addr == glAddr },
+		newRouter,
+	)
+
+	bb, err := json.MarshalIndent(cfg, "", "    ")
 	if err != nil {
 		return err
 	}
