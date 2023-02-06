@@ -5,15 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/imroc/req/v3"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
+	"github.com/kazhuravlev/glinet-sdk"
 	"github.com/kazhuravlev/just"
 	cli "github.com/urfave/cli/v3"
 	"golang.org/x/term"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +21,12 @@ import (
 
 const envPassword = "GL_INET_PASSWORD"
 const cfgFile = ".config/glinet/config.json"
+
+type Code int
+
+const (
+	CodeBadToken Code = -1
+)
 
 type Version string
 
@@ -91,46 +96,19 @@ func main() {
 	}
 }
 
-func cmdGetPublicIP(ctx context.Context, c *cli.Context, client *req.Client) error {
-	resp, err := client.R().
-		SetContext(ctx).
-		Get("/cgi-bin/api/internet/public_ip/get")
+func cmdGetPublicIP(ctx context.Context, c *cli.Context, client *glinet.Client) error {
+	ip, err := client.GetPublicIP(ctx)
 	if err != nil {
 		return err
 	}
 
-	if resp.GetStatusCode() != http.StatusOK {
-		return errors.New("unexpected status code")
-	}
-
-	var res struct {
-		ServerIP string `json:"serverip"`
-	}
-	if err := resp.UnmarshalJson(&res); err != nil {
-		return err
-	}
-
-	fmt.Println("server IP", res.ServerIP)
+	fmt.Println("server IP", ip)
 	return nil
 }
 
-func cmdGetInetReachable(ctx context.Context, c *cli.Context, client *req.Client) error {
-	resp, err := client.R().
-		SetContext(ctx).
-		Get("/cgi-bin/api/internet/reachable")
+func cmdGetInetReachable(ctx context.Context, c *cli.Context, client *glinet.Client) error {
+	res, err := client.GetNetworkStatus(ctx)
 	if err != nil {
-		return err
-	}
-
-	if resp.GetStatusCode() != http.StatusOK {
-		return errors.New("unexpected status code")
-	}
-
-	var res struct {
-		Reachable  bool `json:"reachable"`
-		RebootFlag bool `json:"reboot_flag"`
-	}
-	if err := resp.UnmarshalJson(&res); err != nil {
 		return err
 	}
 
@@ -138,44 +116,9 @@ func cmdGetInetReachable(ctx context.Context, c *cli.Context, client *req.Client
 	return nil
 }
 
-func cmdGetClients(ctx context.Context, c *cli.Context, client *req.Client) error {
-	resp, err := client.R().
-		SetContext(ctx).
-		Get("/cgi-bin/api/client/list")
+func cmdGetClients(ctx context.Context, c *cli.Context, client *glinet.Client) error {
+	res, err := client.GetClientList(ctx)
 	if err != nil {
-		return err
-	}
-
-	if resp.GetStatusCode() != http.StatusOK {
-		return errors.New("unexpected status code")
-	}
-
-	type Client struct {
-		Remote     bool   `json:"remote"`
-		Mac        string `json:"mac"`
-		Favorite   bool   `json:"favorite"`
-		IP         string `json:"ip"`
-		Up         string `json:"up"`
-		Down       string `json:"down"`
-		TotalUp    string `json:"total_up"`
-		TotalDown  string `json:"total_down"`
-		QosUp      string `json:"qos_up"`
-		QosDown    string `json:"qos_down"`
-		Blocked    bool   `json:"blocked"`
-		Iface      string `json:"iface"`
-		Name       string `json:"name"`
-		OnlineTime string `json:"online_time"`
-		Alive      string `json:"alive"`
-		NewOnline  bool   `json:"new_online"`
-		Online     bool   `json:"online"`
-		Vendor     string `json:"vendor"`
-		Node       string `json:"node"`
-	}
-
-	var res struct {
-		Clients []Client `json:"clients"`
-	}
-	if err := resp.UnmarshalJson(&res); err != nil {
 		return err
 	}
 
@@ -193,7 +136,7 @@ func cmdGetClients(ctx context.Context, c *cli.Context, client *req.Client) erro
 		"OnlineTime",
 		"Alive",
 	})
-	just.SliceSort(res.Clients, func(a, b Client) bool {
+	just.SliceSort(res.Clients, func(a, b glinet.RouterClient) bool {
 		return a.Online != b.Online
 	})
 	for _, glClient := range res.Clients {
@@ -215,43 +158,9 @@ func cmdGetClients(ctx context.Context, c *cli.Context, client *req.Client) erro
 	return nil
 }
 
-func cmdGetModemInfo(ctx context.Context, c *cli.Context, client *req.Client) error {
-	resp, err := client.R().
-		SetContext(ctx).
-		Post("/cgi-bin/api/modem/info")
+func cmdGetModemInfo(ctx context.Context, c *cli.Context, client *glinet.Client) error {
+	res, err := client.GetModemInfo(ctx)
 	if err != nil {
-		return err
-	}
-
-	if resp.GetStatusCode() != http.StatusOK {
-		return errors.New("unexpected status code")
-	}
-
-	type Modem struct {
-		Ports       []string `json:"ports"`
-		ModemID     int      `json:"modem_id"`
-		DataPort    string   `json:"data_port"`
-		ControlPort string   `json:"control_port"`
-		QmiPort     string   `json:"qmi_port"`
-		Name        string   `json:"name"`
-		Imei        string   `json:"IMEI"`
-		Bus         string   `json:"bus"`
-		HwVersion   string   `json:"hw_version"`
-		SimNum      string   `json:"sim_num"`
-		Mnc         string   `json:"mnc"`
-		Mcc         string   `json:"mcc"`
-		Carrier     string   `json:"carrier"`
-		Up          string   `json:"up"`
-		SIMStatus   int      `json:"SIM_status"`
-		Operators   []string `json:"operators"`
-	}
-
-	var res struct {
-		Passthrough           bool    `json:"passthrough"`
-		HintModifyWifiChannel int     `json:"hint_modify_wifi_channel"`
-		Modems                []Modem `json:"modems"`
-	}
-	if err := resp.UnmarshalJson(&res); err != nil {
 		return err
 	}
 
@@ -298,81 +207,16 @@ func cmdGetModemInfo(ctx context.Context, c *cli.Context, client *req.Client) er
 	return nil
 }
 
-func cmdTurnModemOn(ctx context.Context, c *cli.Context, client *req.Client) error {
-	request := map[string]string{
-		//"modem_id": "1",
-		//"bus":      "1-1.2",
-		"disable": "false",
-	}
-
-	client.DevMode()
-	resp, err := client.R().
-		SetContext(ctx).
-		SetFormData(request).
-		Post("/cgi-bin/api/modem/enable")
-	if err != nil {
-		return err
-	}
-
-	if resp.GetStatusCode() != http.StatusOK {
-		return errors.New("unexpected status code")
-	}
-
-	return nil
+func cmdTurnModemOn(ctx context.Context, c *cli.Context, client *glinet.Client) error {
+	return client.ModemTurnOn(ctx)
 }
 
-func cmdTurnModemOff(ctx context.Context, c *cli.Context, client *req.Client) error {
-	request := map[string]string{
-		//"modem_id": "1",
-		//"bus":      "1-1.2",
-		"disable": "true",
-	}
-
-	client.DevMode()
-	resp, err := client.R().
-		SetContext(ctx).
-		SetFormData(request).
-		Post("/cgi-bin/api/modem/enable")
-	if err != nil {
-		return err
-	}
-
-	if resp.GetStatusCode() != http.StatusOK {
-		return errors.New("unexpected status code")
-	}
-
-	return nil
+func cmdTurnModemOff(ctx context.Context, c *cli.Context, client *glinet.Client) error {
+	return client.ModemTurnOff(ctx)
 }
 
-func cmdTurnModemOnAuto(ctx context.Context, c *cli.Context, client *req.Client) error {
-	request := map[string]string{
-		"modem_id": "1",
-		"bus":      "1-1.2",
-	}
-
-	client.DevMode()
-	resp, err := client.R().
-		SetContext(ctx).
-		SetFormData(request).
-		Post("/cgi-bin/api/modem/auto")
-	if err != nil {
-		return err
-	}
-
-	if resp.GetStatusCode() != http.StatusOK {
-		return errors.New("unexpected status code")
-	}
-
-	return nil
-}
-
-func getAbsConfigFile() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(homeDir, cfgFile), nil
+func cmdTurnModemOnAuto(ctx context.Context, c *cli.Context, client *glinet.Client) error {
+	return client.ModemTurnOnAuto(ctx)
 }
 
 func cmdAuth(c *cli.Context) error {
@@ -401,7 +245,7 @@ func cmdAuth(c *cli.Context) error {
 
 	glPassword := strings.TrimSpace(string(bytePassword))
 
-	glToken, err := fetchToken(ctx, glAddr, glPassword)
+	glClient, err := glinet.NewFromPassword(ctx, glAddr, glPassword)
 	if err != nil {
 		return err
 	}
@@ -424,7 +268,7 @@ func cmdAuth(c *cli.Context) error {
 	newRouter := Router{
 		Addr:     glAddr,
 		Password: glPassword,
-		Token:    glToken,
+		Token:    glClient.Token(),
 	}
 	cfg.Routers = just.SliceReplaceFirstOrAdd(
 		cfg.Routers,
@@ -446,63 +290,59 @@ func cmdAuth(c *cli.Context) error {
 	return nil
 }
 
-func wrapWithClient(cmd func(context.Context, *cli.Context, *req.Client) error) cli.ActionFunc {
-	// FIXME: support several routers
-
-	return func(c *cli.Context) error {
-		absConfigFile, err := getAbsConfigFile()
-		if err != nil {
-			return err
-		}
-
-		bb, err := os.ReadFile(absConfigFile)
-		if err != nil {
-			return err
-		}
-
-		var cfg Config
-		if err := json.Unmarshal(bb, &cfg); err != nil {
-			return err
-		}
-
-		if cfg.Version != VersionV1 {
-			return errors.New("unsupported config version")
-		}
-
-		if len(cfg.Routers) != 1 {
-			return errors.New("not implemented")
-		}
-
-		glAddr := cfg.Routers[0].Addr
-		glToken := cfg.Routers[0].Token
-
-		client := req.C().
-			SetBaseURL(fmt.Sprintf("https://%s", glAddr)).
-			SetCommonHeader("Authorization", glToken).
-			EnableInsecureSkipVerify()
-
-		// TODO: add timeouts
-		ctx := c.Context
-		return cmd(ctx, c, client)
-	}
-}
-
-func fetchToken(ctx context.Context, addr string, password string) (string, error) {
-	client := req.C().EnableInsecureSkipVerify()
-	resp, err := client.R().
-		SetContext(ctx).
-		SetFormData(map[string]string{"pwd": password}).
-		Post(fmt.Sprintf("https://%s/api/router/login", addr))
+func getAbsConfigFile() (string, error) {
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
 
-	var m struct {
-		Token string `json:"token"`
+	return filepath.Join(homeDir, cfgFile), nil
+}
+
+func wrapWithClient(cmd func(context.Context, *cli.Context, *glinet.Client) error) cli.ActionFunc {
+	// FIXME: support several routers
+
+	return func(c *cli.Context) error {
+		router, err := parseCredentials()
+		if err != nil {
+			return err
+		}
+
+		glClient, err := glinet.New(router.Addr, router.Token)
+		if err != nil {
+			return err
+		}
+
+		// TODO: add timeouts
+		ctx := c.Context
+
+		return cmd(ctx, c, glClient)
 	}
-	if err := resp.UnmarshalJson(&m); err != nil {
-		return "", err
+}
+
+func parseCredentials() (*Router, error) {
+	absConfigFile, err := getAbsConfigFile()
+	if err != nil {
+		return nil, err
 	}
 
-	return m.Token, nil
+	bb, err := os.ReadFile(absConfigFile)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg Config
+	if err := json.Unmarshal(bb, &cfg); err != nil {
+		return nil, err
+	}
+
+	if cfg.Version != VersionV1 {
+		return nil, errors.New("unsupported config version")
+	}
+
+	if len(cfg.Routers) != 1 {
+		return nil, errors.New("not implemented")
+	}
+
+	return &cfg.Routers[0], nil
 }
