@@ -143,3 +143,7 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
+### User
+.idea/*
+!.idea/runConfigurations*
+
