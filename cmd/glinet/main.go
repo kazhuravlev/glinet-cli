@@ -88,6 +88,11 @@ func main() {
 				Description: "Auto dial",
 				Action:      wrapWithClient(cmdTurnModemOnAuto),
 			},
+			{
+				Name:        "modem-restart",
+				Description: "Restart modem",
+				Action:      wrapWithClient(cmdRestartModem),
+			},
 		},
 	}
 
@@ -216,6 +221,14 @@ func cmdTurnModemOff(ctx context.Context, c *cli.Context, client *glinet.Client)
 }
 
 func cmdTurnModemOnAuto(ctx context.Context, c *cli.Context, client *glinet.Client) error {
+	return client.ModemTurnOnAuto(ctx)
+}
+
+func cmdRestartModem(ctx context.Context, c *cli.Context, client *glinet.Client) error {
+	if err := client.ModemTurnOff(ctx); err != nil {
+		return err
+	}
+
 	return client.ModemTurnOnAuto(ctx)
 }
 
