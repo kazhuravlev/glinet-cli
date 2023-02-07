@@ -22,6 +22,8 @@ import (
 const envPassword = "GL_INET_PASSWORD"
 const cfgFile = ".config/glinet/config.json"
 
+var version string
+
 type Code int
 
 const (
