@@ -147,3 +147,5 @@ Temporary Items
 .idea/*
 !.idea/runConfigurations*
 go.work.sum
+bin/
+
