@@ -6,8 +6,16 @@ through [http API](https://dev.gl-inet.com/api/).
 
 ## Installation
 
+**By go install**
+
 ```shell
 go install github.com/kazhuravlev/glinet-cli/cmd/glinet@latest
+```
+
+**By Homebrew**
+
+```shell
+brew install kazhuravlev/glinet/glinet
 ```
 
 ## Preparations
