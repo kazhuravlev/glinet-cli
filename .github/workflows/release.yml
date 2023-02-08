@@ -1,4 +1,4 @@
-name: Go
+name: Make a new release
 on:
   pull_request:
   push:
