@@ -5,34 +5,32 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/jedib0t/go-pretty/v6/text"
-	"github.com/kazhuravlev/glinet-sdk"
-	"github.com/kazhuravlev/just"
-	cli "github.com/urfave/cli/v3"
-	"golang.org/x/term"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/jedib0t/go-pretty/v6/table"
+	"github.com/jedib0t/go-pretty/v6/text"
+	"github.com/kazhuravlev/glinet-sdk"
+	"github.com/kazhuravlev/just"
+	"github.com/urfave/cli/v3"
+	"golang.org/x/term"
 )
-
-const envPassword = "GL_INET_PASSWORD"
-const cfgFile = ".config/glinet/config.json"
-
-var version string
-
-type Code int
 
 const (
-	CodeBadToken Code = -1
+	cfgFile     = ".config/glinet/config.json"
+	cfgDirPerm  = 0o755
+	cfgFilePerm = 0o600
 )
 
-type Version string
+var version = "__local__"
 
-const VersionV1 Version = "v1"
+type ConfigVersion string
+
+const ConfigVersionV1 ConfigVersion = "v1"
 
 type Router struct {
 	Addr     string `json:"addr"`
@@ -41,13 +39,14 @@ type Router struct {
 }
 
 type Config struct {
-	Version Version  `json:"v"`
-	Routers []Router `json:"routers"`
+	Version ConfigVersion `json:"v"`
+	Routers []Router      `json:"routers"`
 }
 
 func main() {
-	app := &cli.App{ //nolint:exhaustruct
-		Name: "glinet",
+	app := &cli.App{ //nolint:exhaustruct,exhaustivestruct
+		Name:    "glinet",
+		Version: version,
 		Commands: []*cli.Command{
 			{
 				Name:        "auth",
@@ -110,6 +109,7 @@ func cmdGetPublicIP(ctx context.Context, c *cli.Context, client *glinet.Client) 
 	}
 
 	fmt.Println("server IP", ip)
+
 	return nil
 }
 
@@ -120,6 +120,7 @@ func cmdGetInetReachable(ctx context.Context, c *cli.Context, client *glinet.Cli
 	}
 
 	fmt.Println(res)
+
 	return nil
 }
 
@@ -129,10 +130,10 @@ func cmdGetClients(ctx context.Context, c *cli.Context, client *glinet.Client) e
 		return err
 	}
 
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
+	outTable := table.NewWriter()
+	outTable.SetOutputMirror(os.Stdout)
 
-	t.AppendHeader(table.Row{
+	outTable.AppendHeader(table.Row{
 		"IP",
 		"Mac",
 		"Online",
@@ -147,7 +148,7 @@ func cmdGetClients(ctx context.Context, c *cli.Context, client *glinet.Client) e
 		return a.Online != b.Online
 	})
 	for _, glClient := range res.Clients {
-		t.AppendRow(table.Row{
+		outTable.AppendRow(table.Row{
 			glClient.IP,
 			glClient.Mac,
 			glClient.Online,
@@ -158,10 +159,10 @@ func cmdGetClients(ctx context.Context, c *cli.Context, client *glinet.Client) e
 			glClient.OnlineTime,
 			glClient.Alive,
 		})
-
 	}
 
-	t.Render()
+	outTable.Render()
+
 	return nil
 }
 
@@ -171,23 +172,23 @@ func cmdGetModemInfo(ctx context.Context, c *cli.Context, client *glinet.Client)
 		return err
 	}
 
-	t := table.NewWriter()
-	t.SetOutputMirror(os.Stdout)
-	t.SetColumnConfigs([]table.ColumnConfig{
+	const maxFirstColumnWidth = 12
+	outTable := table.NewWriter()
+	outTable.SetOutputMirror(os.Stdout)
+	outTable.SetColumnConfigs([]table.ColumnConfig{
 		{
 			Number:   1,
-			WidthMax: 12,
+			WidthMax: maxFirstColumnWidth,
 		},
-		{},
 	})
 
 	for i, modem := range res.Modems {
-		t.AppendRow(table.Row{fmt.Sprintf("#%d", i+1)}, table.RowConfig{
+		outTable.AppendRow(table.Row{fmt.Sprintf("#%d", i+1)}, table.RowConfig{
 			AutoMerge:      true,
 			AutoMergeAlign: text.AlignLeft,
 		})
-		t.AppendSeparator()
-		t.AppendRows([]table.Row{
+		outTable.AppendSeparator()
+		outTable.AppendRows([]table.Row{
 			{"ModemID", modem.ModemID},
 			{"Name", modem.Name},
 			{"Imei", modem.Imei},
@@ -209,7 +210,7 @@ func cmdGetModemInfo(ctx context.Context, c *cli.Context, client *glinet.Client)
 		fmt.Println(modem.SIMStatus, modem.Up, modem.Imei, modem.Carrier, modem.QmiPort)
 	}
 
-	t.Render()
+	outTable.Render()
 
 	return nil
 }
@@ -270,16 +271,16 @@ func cmdAuth(c *cli.Context) error {
 		return err
 	}
 
-	_ = os.MkdirAll(filepath.Dir(absCfgFile), 0o755)
+	_ = os.MkdirAll(filepath.Dir(absCfgFile), cfgDirPerm)
 
 	var cfg Config
-	if bb, err := os.ReadFile(absCfgFile); err == nil {
-		if err := json.Unmarshal(bb, &cfg); err != nil {
+	if cfgBytes, err := os.ReadFile(absCfgFile); err == nil {
+		if err := json.Unmarshal(cfgBytes, &cfg); err != nil {
 			return fmt.Errorf("config file is corrupted. check cfg file or delete it: %w", err)
 		}
 	}
 
-	cfg.Version = VersionV1
+	cfg.Version = ConfigVersionV1
 	newRouter := Router{
 		Addr:     glAddr,
 		Password: glPassword,
@@ -291,12 +292,12 @@ func cmdAuth(c *cli.Context) error {
 		newRouter,
 	)
 
-	bb, err := json.MarshalIndent(cfg, "", "    ")
+	cfgBytes, err := json.MarshalIndent(cfg, "", "    ")
 	if err != nil {
 		return err
 	}
 
-	if err := os.WriteFile(absCfgFile, bb, 0o644); err != nil {
+	if err := os.WriteFile(absCfgFile, cfgBytes, cfgFilePerm); err != nil {
 		return err
 	}
 
@@ -341,17 +342,17 @@ func parseCredentials() (*Router, error) {
 		return nil, err
 	}
 
-	bb, err := os.ReadFile(absConfigFile)
+	cfgBytes, err := os.ReadFile(absConfigFile)
 	if err != nil {
 		return nil, err
 	}
 
 	var cfg Config
-	if err := json.Unmarshal(bb, &cfg); err != nil {
+	if err := json.Unmarshal(cfgBytes, &cfg); err != nil {
 		return nil, err
 	}
 
-	if cfg.Version != VersionV1 {
+	if cfg.Version != ConfigVersionV1 {
 		return nil, errors.New("unsupported config version")
 	}
 

@@ -12,6 +12,9 @@ vars:
   TOOL_LINT_SRC: github.com/golangci/golangci-lint/cmd/golangci-lint@v1.51.1
   TOOL_LINT: ./{{ .TOOL_BIN_DIR }}/golangci-lint
 
+  TOOL_GOFUMPT_SRC: mvdan.cc/gofumpt@v0.4.0
+  TOOL_GOFUMPT: ./{{ .TOOL_BIN_DIR }}/gofumpt
+
 tasks:
   default:
     cmds:
@@ -45,6 +48,7 @@ tasks:
     cmds:
       - echo "- Format"
       - go fmt ./...
+      - ./{{.TOOL_GOFUMPT}} -l -w .
 
   tools:install:
     desc: Install required tools (into local project dir)
@@ -58,6 +62,7 @@ tasks:
       - echo "- Run install tools"
       - mkdir -p {{ .TOOL_BIN_DIR }}
       - export GOBIN="{{.GOBIN}}" && go install {{ .TOOL_LINT_SRC }}
+      - export GOBIN="{{.GOBIN}}" && go install {{ .TOOL_GOFUMPT_SRC }}
 
   lint:
     desc: Run linter
@@ -65,7 +70,7 @@ tasks:
       - "tools:install"
     cmds:
       - echo "- Lint"
-      - "{{ .TOOL_LINT }} run --fix ./..."
+      - "{{ .TOOL_LINT }} run ./..."
 
   install:
     run: once

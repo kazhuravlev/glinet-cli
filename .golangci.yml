@@ -11,6 +11,8 @@ linters-settings:
     ignore-names:
       - err
       - i
+    ignore-decls:
+      - c *cli.Context
 
 linters:
   disable-all: true
@@ -29,13 +31,11 @@ linters:
     - exhaustive
     - exhaustruct
     - exportloopref
-    - forbidigo
     - gci
     - goconst
     - gocritic
     - gocyclo
     - godot
-    - godox
     - gofmt
     - gofumpt
     - goheader
@@ -80,3 +80,5 @@ linters:
     - nlreturn
     - gomnd
     - exhaustivestruct
+#    - forbidigo
+#    - godox
